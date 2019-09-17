@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: positions-api-deployment
+  labels:
+    app: positions-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: positions-api
+  template:
+    metadata:
+      labels:
+        app: positions-api
+    spec:
+      containers:
+      - name: positions-api
+        image: vladpantea/positions-api:v0.0.1
+        ports:
+        - containerPort: 5090
