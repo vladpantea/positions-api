@@ -1,16 +1,26 @@
-const express = require('express');
-const Middleware = require('./middleware/middleware');
-const dotenv = require('dotenv');
-const ErrorHandlingMiddleware = require('./middleware/error-handler');
+const express = require('express')
+const Middleware = require('./middleware/middleware')
+const ErrorHandlingMiddleware = require('./middleware/error-handler')
+const chalk = require('chalk')
 
-dotenv.config();
+const app = express()
+Middleware(app)
 
-const app = express();
-Middleware(app);
+const PositionsController = require('./controllers/positions-controller')
+app.use('/api/positions', PositionsController.router)
 
-const PositionsController = require('./controllers/positions-controller');
-app.use('/api/positions', PositionsController);
+ErrorHandlingMiddleware(app)
 
-ErrorHandlingMiddleware(app);
+const gracefullyClean = (ctrl) => {
+    ctrl.connClose().then(() => {
+        console.log(chalk.blue('Db connection closed'))
+    })
+}
 
-module.exports = app;
+process.on('SIGTERM', gracefullyClean.bind(this,PositionsController))
+
+module.exports = {
+    app: app,
+    gracefullyClean: gracefullyClean,
+    positionsCtrl: PositionsController
+}

@@ -1,124 +1,197 @@
 const chai = require('chai')
 const expect = chai.expect
-const app = require('../server')
-const request = require('supertest')
+const MongoMemoryServer = require('mongodb-memory-server').MongoMemoryServer
+const mongod = new MongoMemoryServer({ debug: false })
+const chalk = require('chalk')
+
+let app = null
+let request = null
+let port = null
+let dbName = null
+let env = null
+const MONGODB_SERVER = '127.0.0.1'
+let position_id = null
+let ctrl = null
 
 
-describe('Positions API tests', () => {
+describe('API TESTS', function () {
+    before(async function () {
+        this.timeout(10000);
+        env = Object.assign({}, process.env)
+        process.env.NODE_ENV = 'test'
+        process.env.MONGODB_SERVER = MONGODB_SERVER
+        process.env.MONGODB_DB_USER = ''
+        process.env.MONGODB_DB_PASS = ''
 
-    it('expect GET /api/positions returns list of subscriptions', async () => {
-        request(app)
-            .get('/api/positions')
-            .expect(200)
-            .end((err, res) => {
-                expect(err).to.be.null;
-                expect(res.body.length).to.equal(24);
+        uri = await mongod.getConnectionString({ useNewUrlParser: true })
+        port = await mongod.getPort()
+        dbPath = await mongod.getDbPath()
+        dbName = await mongod.getDbName()
+        instanceInfo = await mongod.getInstanceInfo()
+
+        process.env.MONGODB_SERVER_PORT = port
+        process.env.MONGODB_DB = dbName
+
+        app = require('../server').app
+        ctrl = require('../server').positionsCtrl
+        request = require('supertest')
+    })
+
+    after(function (done) {
+        this.timeout(10000)
+        process.env = env
+
+        if (mongod) {
+            mongod.stop().then(() => {
+                ctrl.connClose().then(() => {
+                    console.log(chalk.blue('Database connection closed'))
+                    done()
+                })
             })
-    }).timeout(2000)
+        } else {
+            done();
+        }
+    })
 
-    it('expect GET /api/positions/:id return 400 with validation message', async () => {
-        request(app)
-            .get('/api/positions/5d76408900d06b204f99894')
-            .expect(400)
-            .end((err, res) => {
-                expect(err).to.be.null;
-                expect(res.error.message).to.equal('cannot GET /api/positions/5d76408900d06b204f99894 (400)');
-            })
-    }).timeout(2000)
+    describe('Positions Api Tests', () => {
+        before(function (done) {
+            this.timeout(10000);
+            const toPass = {
+                "type": "fulltime",
+                "company": "contoso",
+                "address": "Cluj-Napoca",
+                "email": "contosohr@contoso.eu",
+                "benefits": ["salary", "fresh fruits"],
+                "description": "Fullstack developer wanted!",
+                "requirements": {
+                    "level": "senior",
+                    "language": "node.js"
+                },
+                "candidates": []
+            }
 
-    it('expect GET /api/positions/:id return 200 with object', async () => {
-        request(app)
-            .get('/api/positions/5d76408900d06b204f998948')
-            .expect(200)
-            .end((err, res) => {
-                expect(err).to.be.null;
-                expect(res.body._id).to.equal('5d76408900d06b204f998948');
-            })
-    }).timeout(2000)
+            request(app)
+                .post('/api/positions')
+                .set('Content-Type', 'application/json')
+                .send(JSON.stringify(toPass))
+                .expect(200)
+                .end((err, res) => {
+                    expect(err).to.be.null
+                    position_id = res.body._id
+                    done()
+                })
+        })
 
-    it('expect GET /api/positions/:id return 200 with empty object', async () => {
-        request(app)
-            .get('/api/positions/5d76408900d06b204f998999')
-            .expect(200)
-            .end((err, res) => {
-                expect(err).to.be.null;
-                expect(Object.keys(res.body).length).to.equal(0);
-            })
-    }).timeout(2000)
+        it('expect GET /api/positions returns list of subscriptions', async () => {
+            request(app)
+                .get('/api/positions')
+                .expect(200)
+                .end((err, res) => {
+                    expect(err).to.be.null;
+                    expect(res.body.length).to.equal(1);
+                })
+        }).timeout(2000)
 
-    it('expect POST /api/positions return 200 with created object', async () => {
-        const toPass = {
-            "coupon": 99,
-            "cardNumber": "4858619830278984",
-            "holderName": "John",
-            "expirationDate": "2019-12-27T10:51:51 -02:00",
-            "cvv": "299",
-            "planId": "5d72211041ebbf483b3fe809"
-        };
+        //must have 24 chars length
+        it('expect GET /api/positions/:id return 400 with validation message', async () => {
+            request(app)
+                .get(`/api/positions/5d76408900d06b204f99894`)
+                .expect(400)
+                .end((err, res) => {
+                    expect(err).to.be.null;
+                    expect(res.error.message).to.equal('cannot GET /api/positions/5d76408900d06b204f99894 (400)');
+                })
+        }).timeout(2000)
 
-        request(app)
-            .post('/api/positions')
-            .send(JSON.stringify(toPass))
-            .set('Content-Type', 'application/json')
-            .expect(200)
-            .end((err, res) => {
-                expect(err).to.be.null;
-                expect(res.body._id).to.equal("5d7221107a4812a1ac9e2777");
-            })
-    }).timeout(2000)
+        it('expect GET /api/positions/:id return 200 with object', async () => {
+            request(app)
+                .get(`/api/positions/${position_id}`)
+                .expect(200)
+                .end((err, res) => {
+                    expect(err).to.be.null;
+                    expect(res.body._id).to.equal(position_id);
+                })
+        }).timeout(2000)
 
-    it('expect POST /api/positions return 400 with validation error', async () => {
-        const toPass = {
-            "coupon": 981,
-            "cardNumber": 4858619830278984,
-            "holderName": "John Doe",
-            "expirationDate": "2019-12-27T10:51:51 -02:00",
-            "planId": "5d72211041ebbf483b3fe809"
-        };
+        it('expect GET /api/positions/:id return 200 with empty object', async () => {
+            request(app)
+                .get('/api/positions/5d76408900d06b204f998999')
+                .expect(200)
+                .end((err, res) => {
+                    expect(err).to.be.null;
+                    expect(Object.keys(res.body).length).to.equal(0);
+                })
+        }).timeout(2000)
 
-        request(app)
-            .post('/api/positions')
-            .send(JSON.stringify(toPass))
-            .set('Content-Type', 'application/json')
-            .expect(400)
-            .end((err, res) => {
-                expect(err).to.be.null;
-                expect(res.error.message).to.equal("cannot POST /api/positions (400)");
-            })
-    }).timeout(2000)
+        it('expect POST /api/positions return 200 with created object', async () => {
+            const toPass = {
+                "type": "fulltime",
+                "company": "contoso",
+                "address": "Cluj-Napoca",
+                "email": "contosohr@contoso.eu",
+                "benefits": ["salary", "fresh fruits"],
+                "description": "Senior frontend developer wanted!",
+                "requirements": {
+                    "level": "senior",
+                    "language": "Angularjs"
+                },
+                "candidates": []
+            }
 
-    it('expect POST /api/positions return 400 when wrong unsupported content type', async () => {
-        const toPass = "coupon=981&cardNumber=4858619830278984&holderName=John&expirationDate=2019-12-27T10:51:51&planId: 5d72211041ebbf483b3fe809";
+            request(app)
+                .post('/api/positions')
+                .send(JSON.stringify(toPass))
+                .set('Content-Type', 'application/json')
+                .expect(200)
+                .end((err, res) => {
+                    expect(err).to.be.null;                  
+                })
+        }).timeout(2000)
 
-        request(app)
-            .post('/api/positions')
-            .send(toPass)
-            .set('Content-Type', 'application/x-www-form-urlencoded')
-            .expect(400)
-            .end((err, res) => {
-                expect(err).to.be.null;
-                expect(res.error.message).to.equal("cannot POST /api/positions (400)");
-            })
-    }).timeout(2000)
+        it('expect POST /api/positions return 400 with validation error', async () => {
+            const toPass = {                
+                "company": "contoso",
+                "address": "Cluj-Napoca",
+                "email": "contosohr@contoso.eu",
+                "benefits": ["salary", "fresh fruits"],
+                "description": "Senior frontend developer wanted!",
+                "requirements": {
+                    "level": "senior",
+                    "language": "Angularjs"
+                },
+                "candidates": []
+            }
 
-    it('expect DELETE /api/positions/:id return 204', async () => {
+            request(app)
+                .post('/api/positions')
+                .send(JSON.stringify(toPass))
+                .set('Content-Type', 'application/json')
+                .expect(400)
+                .end((err, res) => {
+                    expect(err).to.be.null;
+                    expect(res.error.message).to.equal("cannot POST /api/positions (400)");
+                })
+        }).timeout(2000)
 
-        request(app)
-            .delete('/api/positions/5d76408900d06b204f998948')
-            .expect(204)
-            .end((err, res) => {
-                expect(err).to.be.null;
-            })
-    }).timeout(2000)
+        it('expect DELETE /api/positions/:id return 204', async () => {
 
-    it('expect DELETE /api/positions/:id return 400', async () => {
+            request(app)
+                .delete(`/api/positions/${position_id}`)
+                .expect(204)
+                .end((err, res) => {
+                    expect(err).to.be.null;
+                })
+        }).timeout(2000)
 
-        request(app)
-            .delete('/api/positions/5d76408900d06b204f998999')
-            .expect(400)
-            .end((err, res) => {
-                expect(err).to.be.null;
-                expect(res.error.message).to.equal("cannot DELETE /api/positions/5d76408900d06b204f998999 (400)");
-            })
-    }).timeout(2000)
+        it('expect DELETE /api/positions/:id return 400', async () => {
+
+            request(app)
+                .delete('/api/positions/5d7221107a4812a1ac9e223')
+                .expect(400)
+                .end((err, res) => {
+                    expect(err).to.be.null;
+                    expect(res.error.message).to.equal("cannot DELETE /api/positions/5d7221107a4812a1ac9e223 (400)");
+                })
+        }).timeout(2000)
+    })
 });
